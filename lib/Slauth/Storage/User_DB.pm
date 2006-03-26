@@ -51,7 +51,7 @@ sub write_record
 	my $pw_hash = md5_base64( $password."-".$salt );
 	my $rec = join ( "::", $login, $pw_hash, $salt, $name, $email,
 		join ( ",", @groups ));
-	$self->write_raw_record($login,$rec);
+	return $self->write_raw_record($login,$rec);
 }
 
 # check a user's password

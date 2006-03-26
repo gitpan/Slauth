@@ -5,46 +5,69 @@
 package Slauth::Config::Apache;
 
 use strict;
-#use warnings FATAL => 'all', NONFATAL => 'redefine';
+use warnings FATAL => 'all', NONFATAL => 'redefine';
 use base "Slauth::Config";
-use Apache::Const -compile => qw(OR_ALL FLAG TAKE1);
-use Apache::CmdParms ();
-use Apache::Module ();
+use Exporter 'import';
+use Data::Dumper;	# uncomment if Dumper debugging calls get uncommented
+BEGIN {
+	Slauth::Config::debug && print STDERR __PACKAGE__.": begin\n";
+	if ( eval "require mod_perl2" ) {
+		Slauth::Config::debug && print STDERR __PACKAGE__.": mod_perl 2 detected\n";
+		$Slauth::Config::Apache::MOD_PERL = 2;
+		require Apache2::Const;
+		import Apache2::Const qw( OR_ALL FLAG TAKE1 );
+		require Apache2::CmdParms;
+		require Apache2::Module;
+		require Apache2::Access;
+	} elsif ( eval "require mod_perl" ) {
+		if ((defined $mod_perl::VERSION) and $mod_perl::VERSION >= 1.99 ) {
+			Slauth::Config::debug && print STDERR __PACKAGE__.": mod_perl 1.99 detected\n";
+			$Slauth::Config::Apache::MOD_PERL = 1.99;
+			require Apache2;
+			require Apache::Const;
+			import Apache::Const qw( OR_ALL FLAG TAKE1 );
+			require Apache::CmdParms;
+			require Apache::Module;
+		} else {
+			die "Slauth::Config: mod_perl 1 not supported\n";
+		}
+	} else {
+		die "Slauth::Config: mod_perl not installed\n";
+	}
+}
 
-sub debug { Slauth::Config::debug; }
+sub debug { &Slauth::Config::debug; }
 
 # establish Apache configuration directives
 our @directives = (
 	{
 		name => 'Slauth',
 		func => __PACKAGE__.'::Cfg_SlauthEnable',
-		req_override => Apache::OR_ALL,
-		args_how => Apache::FLAG,
+		req_override => OR_ALL,
+		args_how => FLAG,
 		errmsg => 'Slauth [On|Off]',
 	},
 	{
 		name => 'SlauthConfig',
 		func => __PACKAGE__.'::Cfg_SlauthConfigFile',
-		req_override => Apache::OR_ALL,
-		args_how => Apache::TAKE1,
+		req_override => OR_ALL,
+		args_how => TAKE1,
 		errmsg => 'SlauthConfig "/path/to/config/file"',
 	},
 	{
 		name => 'SlauthSSLRequired',
 		func => __PACKAGE__.'::Cfg_SlauthSSLRequired',
-		req_override => Apache::OR_ALL,
-		args_how => Apache::FLAG,
+		req_override => OR_ALL,
+		args_how => FLAG,
 		errmsg => 'SlauthSSLRequired [On|Off]',
 	},
 ); 
 
-# for compatibility across various mod_perl 1.99.x releases...
-if ( defined &Apache::Module::add ) {
-	eval "Apache::Module::add(__PACKAGE__, \@directives)";
-} elsif ( Apache::Module->can("add")) {
-	eval "Apache::Module->add(__PACKAGE__, \@directives)";
+# for compatibility across mod_perl 1.99.x and 2.x releases...
+if ( $Slauth::Config::Apache::MOD_PERL >= 2 ) {
+	eval 'Apache2::Module::add("'.__PACKAGE__.'", \@directives)';
 } else {
-	eval "our \@APACHE_MODULE_COMMANDS = \@directives";
+	eval 'Apache::Module::add("'.__PACKAGE__.'", \@directives)';
 }
 
 # initialize a Slauth::Config variable
@@ -55,47 +78,58 @@ sub initialize
 	my $self = shift;
         my $r = shift;
 
-	# get Slauth configgureation from previous Apache handlers if available
+	debug and print STDERR "debug: Slauth::Config::Apache::initialize: entry\n";
+
+	# get Slauth configuration from previous Apache handlers if available
 	if ( $r->pnotes("slauth-config")) {
 		# we've already done the configuration work - don't do it again
-		debug and print STDERR "debug: Slauth::Config: retaining config from previous handler\n";
+		debug and print STDERR "debug: Slauth::Config::Apache: retaining config from previous handler\n";
 		my $config = $r->pnotes("slauth-config");
 		$self->{config} = $config->{config};
 		$self->{dir_cfg} = $config->{dir_cfg};
 		$self->{realm} = $config->{realm};
 	} else {
 		# get Apache per-directory configuration wherever we are
-		$self->{dir_cfg} = Apache::Module->get_config(
-			__PACKAGE__, $r->server(), $r->per_dir_config());
+		if ( $Slauth::Config::Apache::MOD_PERL >= 2 ) {
+			$self->{dir_cfg} = Apache2::Module::get_config(
+				__PACKAGE__, $r->server(),
+				$r->per_dir_config());
+		} else {
+			$self->{dir_cfg} = Apache::Module::get_config(
+				__PACKAGE__, $r->server(),
+				$r->per_dir_config());
+		}
+		debug and print STDERR "dir_cfg: ".Dumper($self->{dir_cfg})."\n";
 
 		# find the realm or host from the request for later convenience
 		# since it's used as an index for some configuration lookups
-		if ( $r->auth_name ) {
-			$self->{realm} = $r->auth_name;
-		} elsif ( $r->hostname ) {
-			$self->{realm} = $r->hostname;
+		if ( $r->auth_name() ) {
+			$self->{realm} = $r->auth_name();
+		} elsif ( $r->hostname() ) {
+			$self->{realm} = $r->hostname();
 		}
 
 		# get config file from per-directory configuration
-		if ( defined $self->{dir_cfg}{SlauthConfigFile}) {
+		if ( exists $self->{dir_cfg}{SlauthConfigFile}) {
 			my %config;
-			debug and print STDERR "debug: Slauth::Config: reading from ".$self->{dir_cfg}{SlauthConfigFile}." (from Apache config)\n";
+			debug and print STDERR "debug: Slauth::Config::Apache: reading from ".$self->{dir_cfg}{SlauthConfigFile}." (from Apache config)\n";
 			eval $self->gulp( $self->{dir_cfg}{SlauthConfigFile});
 			$self->{config} = \%config;
 		} elsif ( -f "/etc/slauth/slauth.conf" ) {
 			my %config;
-			debug and print STDERR "debug: Slauth::Config: reading from /etc/slauth/slauth.conf (default)\n";
+			debug and print STDERR "debug: Slauth::Config::Apache: reading from /etc/slauth/slauth.conf (default)\n";
 			eval $self->gulp( "/etc/slauth/slauth.conf" );
 			$self->{config} = \%config;
 		} else {
-			debug and print STDERR "debug: Slauth::Config: empty config\n";
+			debug and print STDERR "debug: Slauth::Config::Apache: empty config\n";
 			$self->{config} = {};
 			$self->{config}{global} = {};
 			$self->{config}{$self->{realm}} = {};
 		}
+		$self->correct_realm_for_aliases();
 
 		# add "perl_inc" parameter to @INC
-		if ( defined $self->{config}{global}{perl_inc}) {
+		if ( exists $self->{config}{global}{perl_inc}) {
 			push @INC, @{$self->{config}{global}{perl_inc}};
 		}
 
@@ -110,9 +144,20 @@ sub isEnabled
 {
 	my ( $r ) = @_;
 
-	my $dir_cfg = Apache::Module->get_config( __PACKAGE__,
-		$r->server(), $r->per_dir_config());
-	if ( defined $dir_cfg->{enable}) {
+	debug and print STDERR "debug: Slauth::Config::Apache::isEnabled: entry\n";
+
+	my $dir_cfg;
+	debug and print STDERR "debug: Slauth::Config::Apache::isEnabled: mod_perl rev = ".$Slauth::Config::Apache::MOD_PERL."\n";
+	if ( $Slauth::Config::Apache::MOD_PERL >= 2 ) {
+		$dir_cfg = Apache2::Module::get_config( __PACKAGE__,
+			$r->server(), $r->per_dir_config());
+	} else {
+		$dir_cfg = Apache::Module::get_config( __PACKAGE__,
+			$r->server(), $r->per_dir_config());
+	}
+	debug and print STDERR "debug: Slauth::Config::Apache::isEnabled: ".
+		((defined $dir_cfg) ? $dir_cfg->{enable} : "undef" )."\n";
+	if ( exists $dir_cfg->{enable}) {
 		return $dir_cfg->{enable};
 	}
 
@@ -149,9 +194,9 @@ sub merge
 		next if exists $mrg{$key};
 
 		# override
-		if ( defined $add->{$key}) {
+		if ( exists $add->{$key}) {
 			$mrg{$key} = $add->{$key};
-		} elsif ( defined $base->{$key} ) {
+		} elsif ( exists $base->{$key} ) {
 			$mrg{$key} = $base->{$key};
 		}
 	}
@@ -194,7 +239,7 @@ sub get
 	my ( $res ); 
 
 	# check if the key exists in the module's Apache configuration
-	if ( defined $self->{dir_cfg}{$key}) {
+	if ( exists $self->{dir_cfg}{$key}) {
 		return $self->{dir_cfg}{$key};
 	}
 

@@ -8,7 +8,7 @@ use Slauth::Config;
 use IO::File;
 use DB_File;
 use Digest::MD5 'md5_base64';
-use CGI::Carp qw(fatalsToBrowser);
+use CGI::Carp qw(cluck fatalsToBrowser);
 
 our %cache;
 our $salt_chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+_=;.,<>!@#$^&*()~';
@@ -62,6 +62,9 @@ sub opendb
 		confess "Slauth::Storage::DB::opendb() - config is undefined\n";
 	}
 	my $realm = $config->get( "realm" );
+	if ( !defined $realm ) {
+		confess( "opendb: realm is empty" );
+	}
 	$self->{db_path} = $config->get ( "dir" )
 		."/".$self->{file_prefix}.$realm.".db";
 
@@ -152,9 +155,10 @@ sub write_raw_record
 {
 	my ( $self, $key, $rec ) = @_;
 	#$self->{dbobj}->lockDB();
-	my $status = $self->{db}{$key} = $rec;
+	my $status = ( $self->{db}{$key} = $rec );
 	$self->{dbobj}->sync;
 	#$self->{dbobj}->unlockDB();
+	return $status;
 }
 
 # generate a salt (randomizer) string, used for adding randomness to

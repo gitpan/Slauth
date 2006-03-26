@@ -1,4 +1,4 @@
-Slauth version 0.01
+Slauth version 0.02
 ===================
 
 Slauth is a set of Perl modules which manage authentication and authorization
@@ -51,7 +51,7 @@ There are also mail lists at http://www.slauth.org/mailman/listinfo .
 
 COPYRIGHT AND LICENCE
 
-Copyright (C) 2004 by Ian Kluft
+Copyright (C) 2004-2006 by Ian Kluft
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.5 or,

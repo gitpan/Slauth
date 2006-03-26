@@ -5,10 +5,29 @@ package Slauth::User::Web;
 use strict;
 #use warnings FATAL => 'all', NONFATAL => 'redefine';
 use Slauth::Config;
-#use Slauth::Register::Mailman;
+use Slauth::Config::Apache;
+BEGIN {
+	if ( $Slauth::Config::Apache::MOD_PERL >= 2 ) {
+		require Apache2::Response;
+		require Apache2::RequestRec;
+		require Apache2::RequestUtil;
+		require Apache2::RequestIO;
+		require Apache2::URI;
+		require Apache2::Const;
+		import Apache2::Const qw( HTTP_OK OK REDIRECT );
+	} else {
+		require Apache2;
+		require Apache::RequestRec;
+		require Apache::RequestIO;
+		require Apache::RequestUtil;
+		require Apache::Const;
+		import Apache::Const qw( HTTP_OK OK REDIRECT );
+	}
+	require APR::Pool;
+	require APR::Table;
+}
 use Slauth::Storage::Session_DB;
 use Slauth::Storage::User_DB;
-use Apache::Const -compile => qw(OK DECLINED REDIRECT);
 use CGI qw( :common );
 use CGI::Carp qw(fatalsToBrowser);
 
@@ -196,7 +215,7 @@ sub interface
 		$self->{r}->content_type( "text/html" );
 		$self->{r}->no_cache(1);
 	} else {
-		push ( @header_params, -typee => "text/html" );
+		push ( @header_params, -type => "text/html" );
 	}
 
 	# set cookies
@@ -219,7 +238,7 @@ sub interface
 	# set response status
 	if ( !defined $self->{tags}{status}) {
 		if ( defined $self->{r}) {
-			$self->{tags}{status} = Apache::OK;
+			$self->{tags}{status} = HTTP_OK;
 		} else {
 			$self->{tags}{status} = 200;
 		}
@@ -249,7 +268,7 @@ sub interface
 	# print text response
 	$self->template_out;
 	if ( defined $self->{r}) {
-		return Apache::OK;
+		return OK;
 	} else {
 		return;
 	}
@@ -536,8 +555,8 @@ sub redirect
 			}
 		}
 		$r->headers_out->set( "Location" => $url );
-		$r->status(Apache::REDIRECT);
-		return Apache::REDIRECT;
+		$r->status(REDIRECT);
+		return REDIRECT;
 	} else {
 		# CGI mode
 		my $cgi = $self->{cgi};
@@ -572,6 +591,14 @@ sub self_url
 		my $cgi = $self->{cgi};
 		return $cgi->self_cgi;
 	}
+}
+
+# mod_perl response handler
+sub handler
+{
+	my $r = shift;
+	my $web = new Slauth::User::Web ( "request" => $r );
+	return $web->interface;
 }
 
 1;

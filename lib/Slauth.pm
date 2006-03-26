@@ -6,7 +6,8 @@ use 5.008005;
 use strict;
 use warnings;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
+our $RELEASE = '0_pre9h';
 
 1;
 __END__
@@ -38,7 +39,7 @@ Project mail lists are at http://www.slauth.org/mailman/listinfo
 
 =head1 AUTHOR
 
-Ian Kluft, E<lt>ikluft@localdomainE<gt>
+Ian Kluft, E<lt>ikluft-slauth@thunder.sbay.org<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
